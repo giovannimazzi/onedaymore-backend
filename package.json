@@ -1,0 +1,32 @@
+{
+  "name": "onedaymore-backend",
+  "version": "1.0.0",
+  "description": "Backend API Express OneDayMore",
+  "keywords": [
+    "Express",
+    "API",
+    "SQL"
+  ],
+  "homepage": "https://github.com/giovannimazzi/onedaymore-backend#readme",
+  "bugs": {
+    "url": "https://github.com/giovannimazzi/onedaymore-backend/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/giovannimazzi/onedaymore-backend.git"
+  },
+  "license": "ISC",
+  "author": "giovannimazzi, gabrielechiocca, salvatoreraia, marcovenerando, brayanrodrigogenovese",
+  "type": "commonjs",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node --env-file=.env app.js",
+    "watch": "node --watch --env-file=.env app.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "mysql2": "^3.20.0"
+  }
+}
