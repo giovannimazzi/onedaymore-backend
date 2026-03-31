@@ -5,11 +5,28 @@ const {
 } = require("../utils/database");
 
 function index(req, res) {
-  res.json({ message: "WIP" });
+  const discountCodesSQL = `
+    SELECT *
+    FROM onedaymore.discount_codes;`;
+  connection.query(discountCodesSQL, (err, discountCodeResult) => {
+    if (err) return handleFailedQuery(err, res);
+    res.json({ result: discountCodeResult });
+  });
 }
 
 function show(req, res) {
-  res.json({ message: "WIP" });
+  const { id } = req.params;
+  const discountCodesSQL = `
+    SELECT discount_codes.*   
+    FROM onedaymore.discount_codes
+    WHERE discount_codes.id = ?`;
+  connection.query(discountCodesSQL, [id], (err, discountCodeResult) => {
+    if (err) return handleFailedQuery(err, res);
+    const discountCode = discountCodeResult[0];
+    if (!discountCode) return handleResourceNotFound(res);
+
+    res.json({ result: discountCode });
+  });
 }
 
 function store(req, res) {
