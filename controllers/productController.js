@@ -153,9 +153,16 @@ function index(req, res) {
         OR products.short_description LIKE ?
         OR products.description LIKE ?
         OR products.brand LIKE ?
+        OR categories.name LIKE ?
       )`;
     const likeSearch = `%${search.trim()}%`;
-    queryParams.push(likeSearch, likeSearch, likeSearch, likeSearch);
+    queryParams.push(
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+    );
   }
 
   if (category.trim()) {
