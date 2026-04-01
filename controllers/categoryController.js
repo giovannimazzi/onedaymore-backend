@@ -5,11 +5,51 @@ const {
 } = require("../utils/database");
 
 function index(req, res) {
-  res.json({ message: "WIP" });
+  const categoriesSQL = `
+    SELECT
+      id,
+      name,
+      slug,
+      description,
+      created_at,
+      updated_at
+    FROM onedaymore.categories
+    ORDER BY name ASC;`;
+
+  connection.query(categoriesSQL, (err, result) => {
+    if (err) return handleFailedQuery(err, res);
+
+    res.json({
+      result,
+    });
+  });
 }
 
 function show(req, res) {
-  res.json({ message: "WIP" });
+  const { slug } = req.params;
+
+  const categorySQL = `
+    SELECT
+      id,
+      name,
+      slug,
+      description,
+      created_at,
+      updated_at
+    FROM onedaymore.categories
+    WHERE slug = ?;`;
+
+  connection.query(categorySQL, [slug], (err, result) => {
+    if (err) return handleFailedQuery(err, res);
+
+    const category = result[0];
+
+    if (!category) return handleResourceNotFound(res);
+
+    res.json({
+      result: category,
+    });
+  });
 }
 
 function store(req, res) {
@@ -28,4 +68,11 @@ function destroy(req, res) {
   res.json({ message: "WIP" });
 }
 
-module.exports = { index, show, store, update, modify, destroy };
+module.exports = {
+  index,
+  show,
+  store,
+  update,
+  modify,
+  destroy,
+};
