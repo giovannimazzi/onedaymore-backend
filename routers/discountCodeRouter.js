@@ -5,11 +5,11 @@ const discountCodeController = require("../controllers/discountCodeController");
 router.post("/validate", discountCodeController.validate);
 
 router.get("/", discountCodeController.index);
-router.get("/:id", discountCodeController.show);
+router.get("/:code", discountCodeController.show);
 
 router.post("/", discountCodeController.store);
-router.put("/:id", discountCodeController.update);
-router.patch("/:id", discountCodeController.modify);
-router.delete("/:id", discountCodeController.destroy);
+router.put("/:code", discountCodeController.update);
+router.patch("/:code", discountCodeController.modify);
+router.delete("/:code", discountCodeController.destroy);
 
 module.exports = router;
