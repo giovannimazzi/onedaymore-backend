@@ -3,93 +3,20 @@ const {
   handleFailedQuery,
   handleResourceNotFound,
 } = require("../utils/database");
+const { roundCurrency } = require("../utils/financial");
 
 function homepage(req, res) {
-  const latestArrivalsSQL = `
-    SELECT
-      categories.name AS category_name,
-      categories.slug AS category_slug,
-      categories.description AS category_description,
-      products.name,
-      products.slug,
-      products.short_description,
-      products.description,
-      products.brand,
-      products.price,
-      products.weight_grams,
-      products.servings,
-      products.calories,
-      products.storage_life_months,
-      products.preparation_type,
-      products.water_needed_ml,
-      products.quantity_available,
-      products.is_active,
-      products.image_url,
-      products.created_at,
-      products.updated_at
-    FROM onedaymore.products
-    INNER JOIN onedaymore.categories
-      ON products.category_id = categories.id
-    WHERE products.is_active = 1
-    ORDER BY products.created_at DESC
-    LIMIT 8;`;
+  const latestArrivalsSQL = buildProductsSQL({
+    extraWhere: "AND latest.slug IS NOT NULL",
+    orderBy: "products.created_at DESC",
+    limitClause: "LIMIT 8",
+  });
 
-  const bestSellersSQL = `
-    SELECT
-      categories.name AS category_name,
-      categories.slug AS category_slug,
-      categories.description AS category_description,
-      products.name,
-      products.slug,
-      products.short_description,
-      products.description,
-      products.brand,
-      products.price,
-      products.weight_grams,
-      products.servings,
-      products.calories,
-      products.storage_life_months,
-      products.preparation_type,
-      products.water_needed_ml,
-      products.quantity_available,
-      products.is_active,
-      products.image_url,
-      products.created_at,
-      products.updated_at,
-      COALESCE(SUM(order_product.quantity), 0) AS total_sold
-    FROM onedaymore.products
-    INNER JOIN onedaymore.categories
-      ON products.category_id = categories.id
-    LEFT JOIN onedaymore.order_product
-      ON products.id = order_product.product_id
-    LEFT JOIN onedaymore.orders
-      ON order_product.order_id = orders.id
-      AND orders.status = 'confirmed'
-    WHERE products.is_active = 1
-    GROUP BY
-      categories.name,
-      categories.slug,
-      categories.description,
-      products.id,
-      products.name,
-      products.slug,
-      products.short_description,
-      products.description,
-      products.brand,
-      products.price,
-      products.weight_grams,
-      products.servings,
-      products.calories,
-      products.storage_life_months,
-      products.preparation_type,
-      products.water_needed_ml,
-      products.quantity_available,
-      products.is_active,
-      products.image_url,
-      products.created_at,
-      products.updated_at
-    ORDER BY total_sold DESC, products.created_at DESC
-    LIMIT 8;`;
+  const bestSellersSQL = buildProductsSQL({
+    extraWhere: "AND best.slug IS NOT NULL",
+    orderBy: "total_sold DESC, products.created_at DESC",
+    limitClause: "LIMIT 8",
+  });
 
   connection.query(latestArrivalsSQL, (latestErr, latestResult) => {
     if (latestErr) return handleFailedQuery(latestErr, res);
@@ -97,19 +24,12 @@ function homepage(req, res) {
     connection.query(bestSellersSQL, (bestErr, bestResult) => {
       if (bestErr) return handleFailedQuery(bestErr, res);
 
-      const latest_arrivals = latestResult.map((product) =>
-        mapPublicProduct(product),
-      );
-
-      const best_sellers = bestResult.map((product) => ({
-        ...mapPublicProduct(product),
-        total_sold: Number(product.total_sold),
-      }));
-
       res.json({
         result: {
-          latest_arrivals,
-          best_sellers,
+          latest_arrivals: latestResult.map((product) =>
+            mapPublicProduct(product),
+          ),
+          best_sellers: bestResult.map((product) => mapPublicProduct(product)),
         },
       });
     });
@@ -124,6 +44,8 @@ function index(req, res) {
     order = "desc",
     limit,
     preparation_type,
+    min_price,
+    max_price,
     min_calories,
     max_calories,
     min_weight_grams,
@@ -145,6 +67,7 @@ function index(req, res) {
     servings: "products.servings",
     storage_life_months: "products.storage_life_months",
     water_needed_ml: "products.water_needed_ml",
+    total_sold: "total_sold",
   };
 
   const normalizedSort =
@@ -154,10 +77,10 @@ function index(req, res) {
     String(order).toLowerCase() === "asc" ? "ASC" : "DESC";
 
   const queryParams = [];
-  let whereClause = "WHERE products.is_active = 1";
+  let extraWhere = "";
 
   if (search.trim()) {
-    whereClause += `
+    extraWhere += `
       AND (
         products.name LIKE ?
         OR products.short_description LIKE ?
@@ -176,62 +99,72 @@ function index(req, res) {
   }
 
   if (category.trim()) {
-    whereClause += ` AND categories.slug = ?`;
+    extraWhere += ` AND categories.slug = ?`;
     queryParams.push(category.trim());
   }
 
   if (preparation_type !== undefined && preparation_type !== "") {
-    whereClause += ` AND COALESCE(products.preparation_type, '') = ?`;
+    extraWhere += ` AND COALESCE(products.preparation_type, '') = ?`;
     queryParams.push(preparation_type);
   }
 
+  if (min_price !== undefined && min_price !== "") {
+    extraWhere += ` AND COALESCE(products.price, 0) >= ?`;
+    queryParams.push(Number(min_price));
+  }
+
+  if (max_price !== undefined && max_price !== "") {
+    extraWhere += ` AND COALESCE(products.price, 0) <= ?`;
+    queryParams.push(Number(max_price));
+  }
+
   if (min_calories !== undefined && min_calories !== "") {
-    whereClause += ` AND COALESCE(products.calories, 0) >= ?`;
+    extraWhere += ` AND COALESCE(products.calories, 0) >= ?`;
     queryParams.push(Number(min_calories));
   }
 
   if (max_calories !== undefined && max_calories !== "") {
-    whereClause += ` AND COALESCE(products.calories, 0) <= ?`;
+    extraWhere += ` AND COALESCE(products.calories, 0) <= ?`;
     queryParams.push(Number(max_calories));
   }
 
   if (min_weight_grams !== undefined && min_weight_grams !== "") {
-    whereClause += ` AND COALESCE(products.weight_grams, 0) >= ?`;
+    extraWhere += ` AND COALESCE(products.weight_grams, 0) >= ?`;
     queryParams.push(Number(min_weight_grams));
   }
 
   if (max_weight_grams !== undefined && max_weight_grams !== "") {
-    whereClause += ` AND COALESCE(products.weight_grams, 0) <= ?`;
+    extraWhere += ` AND COALESCE(products.weight_grams, 0) <= ?`;
     queryParams.push(Number(max_weight_grams));
   }
 
   if (min_servings !== undefined && min_servings !== "") {
-    whereClause += ` AND COALESCE(products.servings, 0) >= ?`;
+    extraWhere += ` AND COALESCE(products.servings, 0) >= ?`;
     queryParams.push(Number(min_servings));
   }
 
   if (max_servings !== undefined && max_servings !== "") {
-    whereClause += ` AND COALESCE(products.servings, 0) <= ?`;
+    extraWhere += ` AND COALESCE(products.servings, 0) <= ?`;
     queryParams.push(Number(max_servings));
   }
 
   if (min_storage_life_months !== undefined && min_storage_life_months !== "") {
-    whereClause += ` AND COALESCE(products.storage_life_months, 0) >= ?`;
+    extraWhere += ` AND COALESCE(products.storage_life_months, 0) >= ?`;
     queryParams.push(Number(min_storage_life_months));
   }
 
   if (max_storage_life_months !== undefined && max_storage_life_months !== "") {
-    whereClause += ` AND COALESCE(products.storage_life_months, 0) <= ?`;
+    extraWhere += ` AND COALESCE(products.storage_life_months, 0) <= ?`;
     queryParams.push(Number(max_storage_life_months));
   }
 
   if (min_water_needed_ml !== undefined && min_water_needed_ml !== "") {
-    whereClause += ` AND COALESCE(products.water_needed_ml, 0) >= ?`;
+    extraWhere += ` AND COALESCE(products.water_needed_ml, 0) >= ?`;
     queryParams.push(Number(min_water_needed_ml));
   }
 
   if (max_water_needed_ml !== undefined && max_water_needed_ml !== "") {
-    whereClause += ` AND COALESCE(products.water_needed_ml, 0) <= ?`;
+    extraWhere += ` AND COALESCE(products.water_needed_ml, 0) <= ?`;
     queryParams.push(Number(max_water_needed_ml));
   }
 
@@ -239,46 +172,21 @@ function index(req, res) {
   if (limit !== undefined) {
     const parsedLimit = parseInt(limit, 10);
     if (!Number.isNaN(parsedLimit) && parsedLimit > 0) {
-      limitClause = ` LIMIT ${parsedLimit}`;
+      limitClause = `LIMIT ${parsedLimit}`;
     }
   }
 
-  const productsSQL = `
-    SELECT
-      categories.name AS category_name,
-      categories.slug AS category_slug,
-      categories.description AS category_description,
-      products.name,
-      products.slug,
-      products.short_description,
-      products.description,
-      products.brand,
-      products.price,
-      products.weight_grams,
-      products.servings,
-      products.calories,
-      products.storage_life_months,
-      products.preparation_type,
-      products.water_needed_ml,
-      products.quantity_available,
-      products.is_active,
-      products.image_url,
-      products.created_at,
-      products.updated_at
-    FROM onedaymore.products
-    INNER JOIN onedaymore.categories
-      ON products.category_id = categories.id
-    ${whereClause}
-    ORDER BY ${normalizedSort} ${normalizedOrder}
-    ${limitClause};`;
+  const productsSQL = buildProductsSQL({
+    extraWhere,
+    orderBy: `${normalizedSort} ${normalizedOrder}`,
+    limitClause,
+  });
 
   connection.query(productsSQL, queryParams, (err, productResult) => {
     if (err) return handleFailedQuery(err, res);
 
-    const products = productResult.map((product) => mapPublicProduct(product));
-
     res.json({
-      result: products,
+      result: productResult.map((product) => mapPublicProduct(product)),
       filters: {
         search,
         category,
@@ -286,6 +194,8 @@ function index(req, res) {
         order,
         limit: limit || null,
         preparation_type: preparation_type || null,
+        min_price: min_price || null,
+        max_price: max_price || null,
         min_calories: min_calories || null,
         max_calories: max_calories || null,
         min_weight_grams: min_weight_grams || null,
@@ -304,41 +214,21 @@ function index(req, res) {
 function show(req, res) {
   const { slug } = req.params;
 
-  const productsSQL = `
-    SELECT
-      categories.name AS category_name,
-      categories.slug AS category_slug,
-      categories.description AS category_description,
-      products.name,
-      products.slug,
-      products.short_description,
-      products.description,
-      products.brand,
-      products.price,
-      products.weight_grams,
-      products.servings,
-      products.calories,
-      products.storage_life_months,
-      products.preparation_type,
-      products.water_needed_ml,
-      products.quantity_available,
-      products.is_active,
-      products.image_url,
-      products.created_at,
-      products.updated_at
-    FROM onedaymore.products
-    INNER JOIN onedaymore.categories
-      ON products.category_id = categories.id
-    WHERE products.slug = ?
-      AND products.is_active = 1;`;
+  const productSQL = buildProductsSQL({
+    extraWhere: "AND products.slug = ?",
+    orderBy: "products.created_at DESC",
+    limitClause: "LIMIT 1",
+  });
 
-  connection.query(productsSQL, [slug], (err, productResult) => {
+  connection.query(productSQL, [slug], (err, productResult) => {
     if (err) return handleFailedQuery(err, res);
 
     const product = productResult[0];
     if (!product) return handleResourceNotFound(res);
 
-    res.json({ result: mapPublicProduct(product) });
+    res.json({
+      result: mapPublicProduct(product),
+    });
   });
 }
 
@@ -456,6 +346,110 @@ module.exports = {
   destroy,
 };
 
+function buildProductsSQL({
+  extraWhere = "",
+  orderBy = "products.created_at DESC",
+  limitClause = "",
+}) {
+  return `
+    SELECT
+      categories.name AS category_name,
+      categories.slug AS category_slug,
+      categories.description AS category_description,
+
+      products.name,
+      products.slug,
+      products.short_description,
+      products.description,
+      products.brand,
+      products.price,
+      products.weight_grams,
+      products.servings,
+      products.calories,
+      products.storage_life_months,
+      products.preparation_type,
+      products.water_needed_ml,
+      products.quantity_available,
+      products.image_url,
+
+      COALESCE(SUM(order_product.quantity), 0) AS total_sold,
+
+      CASE
+        WHEN latest.slug IS NOT NULL THEN 1
+        ELSE 0
+      END AS is_latest,
+
+      CASE
+        WHEN best.slug IS NOT NULL THEN 1
+        ELSE 0
+      END AS is_best_seller
+
+    FROM onedaymore.products
+
+    INNER JOIN onedaymore.categories
+      ON products.category_id = categories.id
+
+    LEFT JOIN onedaymore.order_product
+      ON products.id = order_product.product_id
+
+    LEFT JOIN onedaymore.orders
+      ON order_product.order_id = orders.id
+      AND orders.status = 'confirmed'
+
+    LEFT JOIN (
+      SELECT slug
+      FROM onedaymore.products
+      WHERE is_active = 1
+      ORDER BY created_at DESC
+      LIMIT 8
+    ) AS latest
+      ON products.slug = latest.slug
+
+    LEFT JOIN (
+      SELECT p.slug
+      FROM onedaymore.products p
+      LEFT JOIN onedaymore.order_product op
+        ON p.id = op.product_id
+      LEFT JOIN onedaymore.orders o
+        ON op.order_id = o.id
+        AND o.status = 'confirmed'
+      WHERE p.is_active = 1
+      GROUP BY p.id, p.slug
+      ORDER BY COALESCE(SUM(op.quantity), 0) DESC, p.created_at DESC
+      LIMIT 8
+    ) AS best
+      ON products.slug = best.slug
+
+    WHERE products.is_active = 1
+    ${extraWhere}
+
+    GROUP BY
+      products.id,
+      categories.name,
+      categories.slug,
+      categories.description,
+      products.name,
+      products.slug,
+      products.short_description,
+      products.description,
+      products.brand,
+      products.price,
+      products.weight_grams,
+      products.servings,
+      products.calories,
+      products.storage_life_months,
+      products.preparation_type,
+      products.water_needed_ml,
+      products.quantity_available,
+      products.image_url,
+      latest.slug,
+      best.slug
+
+    ORDER BY ${orderBy}
+    ${limitClause};
+  `;
+}
+
 function buildProductImgPath(image_url) {
   if (!image_url) return null;
   return `${process.env.APP_URL}:${process.env.APP_PORT}/img/products/${image_url}`;
@@ -471,7 +465,7 @@ function mapPublicProduct(product) {
     short_description: product.short_description,
     description: product.description,
     brand: product.brand,
-    price: Number(product.price),
+    price: roundCurrency(Number(product.price)),
     weight_grams: product.weight_grams,
     servings: product.servings,
     calories: product.calories,
@@ -480,9 +474,9 @@ function mapPublicProduct(product) {
     water_needed_ml: product.water_needed_ml,
     quantity_available: product.quantity_available,
     low_availability: product.quantity_available < 10,
-    /* is_active: product.is_active, */
+    total_sold: Number(product.total_sold),
+    is_latest: Boolean(product.is_latest),
+    is_best_seller: Boolean(product.is_best_seller),
     image_url: buildProductImgPath(product.image_url),
-    /* created_at: product.created_at, */
-    /* updated_at: product.updated_at, */
   };
 }
