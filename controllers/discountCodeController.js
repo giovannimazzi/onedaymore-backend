@@ -3,11 +3,11 @@ const {
   handleFailedQuery,
   handleResourceNotFound,
 } = require("../utils/database");
+const { roundCurrency } = require("../utils/financial");
 
 function index(req, res) {
   const discountCodesSQL = `
     SELECT
-      id,
       code,
       description,
       discount_type,
@@ -15,25 +15,28 @@ function index(req, res) {
       min_order_amount,
       starts_at,
       ends_at,
-      is_active,
-      created_at,
-      updated_at
+      is_active
     FROM onedaymore.discount_codes
     ORDER BY starts_at ASC;`;
 
   connection.query(discountCodesSQL, (err, result) => {
     if (err) return handleFailedQuery(err, res);
 
-    res.json({ result });
+    const discountCodes = result.map((discountCode) =>
+      mapPublicDiscountCode(discountCode),
+    );
+
+    res.json({
+      result: discountCodes,
+    });
   });
 }
 
 function show(req, res) {
-  const { id } = req.params;
+  const { code } = req.params;
 
   const discountCodeSQL = `
     SELECT
-      id,
       code,
       description,
       discount_type,
@@ -41,19 +44,19 @@ function show(req, res) {
       min_order_amount,
       starts_at,
       ends_at,
-      is_active,
-      created_at,
-      updated_at
+      is_active
     FROM onedaymore.discount_codes
-    WHERE id = ?;`;
+    WHERE code = ?;`;
 
-  connection.query(discountCodeSQL, [id], (err, result) => {
+  connection.query(discountCodeSQL, [code], (err, result) => {
     if (err) return handleFailedQuery(err, res);
 
     const discountCode = result[0];
     if (!discountCode) return handleResourceNotFound(res);
 
-    res.json({ result: discountCode });
+    res.json({
+      result: mapPublicDiscountCode(discountCode),
+    });
   });
 }
 
@@ -70,7 +73,6 @@ function validate(req, res) {
 
   const discountSQL = `
     SELECT
-      id,
       code,
       description,
       discount_type,
@@ -95,7 +97,7 @@ function validate(req, res) {
           is_valid: false,
           message: "Discount code is invalid or expired",
           discount_amount: 0,
-          final_total: numericSubtotal,
+          final_total: roundCurrency(numericSubtotal),
         },
       });
     }
@@ -107,10 +109,10 @@ function validate(req, res) {
       return res.json({
         result: {
           is_valid: false,
-          message: `Minimum order amount not reached`,
+          message: "Minimum order amount not reached",
           discount_amount: 0,
-          final_total: numericSubtotal,
-          min_order_amount: Number(discount.min_order_amount),
+          final_total: roundCurrency(numericSubtotal),
+          min_order_amount: roundCurrency(Number(discount.min_order_amount)),
         },
       });
     }
@@ -133,13 +135,14 @@ function validate(req, res) {
         is_valid: true,
         message: "Discount code is valid",
         code: discount.code,
+        description: discount.description,
         discount_type: discount.discount_type,
-        discount_value: Number(discount.discount_value),
-        discount_amount: discountAmount,
-        final_total: numericSubtotal - discountAmount,
+        discount_value: roundCurrency(Number(discount.discount_value)),
+        discount_amount: roundCurrency(discountAmount),
+        final_total: roundCurrency(numericSubtotal - discountAmount),
         min_order_amount:
           discount.min_order_amount !== null
-            ? Number(discount.min_order_amount)
+            ? roundCurrency(Number(discount.min_order_amount))
             : null,
       },
     });
@@ -171,3 +174,19 @@ module.exports = {
   modify,
   destroy,
 };
+
+function mapPublicDiscountCode(discountCode) {
+  return {
+    code: discountCode.code,
+    description: discountCode.description,
+    discount_type: discountCode.discount_type,
+    discount_value: roundCurrency(Number(discountCode.discount_value)),
+    min_order_amount:
+      discountCode.min_order_amount !== null
+        ? roundCurrency(Number(discountCode.min_order_amount))
+        : null,
+    starts_at: discountCode.starts_at,
+    ends_at: discountCode.ends_at,
+    is_active: discountCode.is_active,
+  };
+}
