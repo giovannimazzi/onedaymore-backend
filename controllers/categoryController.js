@@ -7,20 +7,19 @@ const {
 function index(req, res) {
   const categoriesSQL = `
     SELECT
-      id,
       name,
       slug,
-      description,
-      created_at,
-      updated_at
+      description
     FROM onedaymore.categories
     ORDER BY name ASC;`;
 
   connection.query(categoriesSQL, (err, result) => {
     if (err) return handleFailedQuery(err, res);
 
+    const categories = result.map((category) => mapPublicCategory(category));
+
     res.json({
-      result,
+      result: categories,
     });
   });
 }
@@ -30,12 +29,9 @@ function show(req, res) {
 
   const categorySQL = `
     SELECT
-      id,
       name,
       slug,
-      description,
-      created_at,
-      updated_at
+      description
     FROM onedaymore.categories
     WHERE slug = ?;`;
 
@@ -43,11 +39,10 @@ function show(req, res) {
     if (err) return handleFailedQuery(err, res);
 
     const category = result[0];
-
     if (!category) return handleResourceNotFound(res);
 
     res.json({
-      result: category,
+      result: mapPublicCategory(category),
     });
   });
 }
@@ -76,3 +71,11 @@ module.exports = {
   modify,
   destroy,
 };
+
+function mapPublicCategory(category) {
+  return {
+    name: category.name,
+    slug: category.slug,
+    description: category.description,
+  };
+}
