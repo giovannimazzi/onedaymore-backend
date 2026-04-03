@@ -32,8 +32,6 @@ function index(req, res) {
       total_amount,
       placed_at,
       status,
-      customer_email_sent,
-      vendor_email_sent,
       created_at,
       updated_at
     FROM onedaymore.orders
@@ -78,8 +76,6 @@ function show(req, res) {
       total_amount,
       placed_at,
       status,
-      customer_email_sent,
-      vendor_email_sent,
       created_at,
       updated_at
     FROM onedaymore.orders
@@ -93,9 +89,6 @@ function show(req, res) {
 
     const orderProductsSQL = `
       SELECT
-        id,
-        product_id,
-        order_id,
         product_name,
         unit_price,
         quantity
@@ -139,7 +132,6 @@ function store(req, res) {
     shipping_country,
     items,
     discount_code,
-    payment_simulation = "success",
   } = req.body;
 
   // 1. Validazione minima dei campi richiesti (da fare più approfondita?)
@@ -166,25 +158,25 @@ function store(req, res) {
   // 2. Normalizzazione e validazione base degli items
   const normalizedItems = items
     .map((item) => ({
-      id: Number(item.id),
+      slug: String(item.slug || "").trim(),
       quantity: Number(item.quantity),
     }))
     .filter(
       (item) =>
-        Number.isInteger(item.id) &&
-        item.id > 0 &&
+        item.slug.length > 0 &&
         Number.isInteger(item.quantity) &&
         item.quantity > 0,
     );
 
   if (normalizedItems.length !== items.length) {
     return res.status(400).json({
-      message: "Each item must contain a valid id and quantity greater than 0",
+      message:
+        "Each item must contain a valid slug and quantity greater than 0",
     });
   }
 
-  const productIds = [...new Set(normalizedItems.map((item) => item.id))];
-  const placeholders = productIds.map(() => "?").join(",");
+  const slugs = [...new Set(normalizedItems.map((item) => item.slug))];
+  const placeholders = slugs.map(() => "?").join(",");
 
   // 3. Recupero prodotti dal DB per:
   // - verificare che esistano
@@ -193,25 +185,26 @@ function store(req, res) {
   const productsSQL = `
     SELECT
       id,
+      slug,
       name,
       price,
       quantity_available,
       is_active
     FROM onedaymore.products
-    WHERE id IN (${placeholders});`;
+    WHERE slug IN (${placeholders});`;
 
-  connection.query(productsSQL, productIds, (err, productsResult) => {
+  connection.query(productsSQL, slugs, (err, productsResult) => {
     if (err) return handleFailedQuery(err, res);
 
     const productsMap = new Map(
-      productsResult.map((product) => [product.id, product]),
+      productsResult.map((product) => [product.slug, product]),
     );
 
     let subtotal = 0;
 
     // 4. Controllo disponibilità prodotti e calcolo subtotale
     for (const item of normalizedItems) {
-      const product = productsMap.get(item.id);
+      const product = productsMap.get(item.slug);
 
       if (!product) {
         return res.status(400).json({
@@ -274,7 +267,7 @@ function store(req, res) {
             }
 
             if (discountAmount > subtotal) {
-              discountAmount = subtotal; // per non andare in negativo
+              discountAmount = subtotal;
             }
           }
         }
@@ -292,13 +285,11 @@ function store(req, res) {
 
       const shippingAmount =
         subtotal >= freeShippingThreshold ? 0 : standardShippingCost;
+
       const totalAmount = subtotal - discountAmount + shippingAmount;
 
-      // gestione pagamento simulato lato frontend in modo randomico sbilanciato verso esiti positivi.
       const simulatedStatus =
-        String(payment_simulation).toLowerCase() === "fail"
-          ? "payment_failed"
-          : "confirmed";
+        Math.random() < 0.8 ? "confirmed" : "payment_failed";
 
       const orderNumber = generateOrderNumber();
 
@@ -372,24 +363,17 @@ function store(req, res) {
         //    - vendor_email_sent = 1 if vendor email is sent successfully
         // For now email handling is intentionally not implemented,
         // so both flags remain 0 as a reminder for future development.
-        //----------------------------------------------------------------
 
-        // 7. Se il pagamento fallisce, salvo l'ordine ma non:
-        // - inserisco order_product
-        // - aggiorno stock
         if (simulatedStatus === "payment_failed") {
           return res.status(201).json({
             message: "Order created but payment failed",
             result: {
-              order_id: orderId,
               order_number: orderNumber,
               status: simulatedStatus,
               subtotal_amount: subtotal,
               discount_amount: discountAmount,
               shipping_amount: shippingAmount,
               total_amount: totalAmount,
-              customer_email_sent: 0,
-              vendor_email_sent: 0,
             },
           });
         }
@@ -405,7 +389,7 @@ function store(req, res) {
           ) VALUES ?;`;
 
         const orderItemsValues = normalizedItems.map((item) => {
-          const product = productsMap.get(item.id);
+          const product = productsMap.get(item.slug);
 
           return [
             product.id,
@@ -422,6 +406,8 @@ function store(req, res) {
           // 9. Aggiorno lo stock solo per ordini confermati
           const updatePromises = normalizedItems.map((item) => {
             return new Promise((resolve, reject) => {
+              const product = productsMap.get(item.slug);
+
               const updateStockSQL = `
                 UPDATE onedaymore.products
                 SET quantity_available = quantity_available - ?
@@ -429,7 +415,7 @@ function store(req, res) {
 
               connection.query(
                 updateStockSQL,
-                [item.quantity, item.id],
+                [item.quantity, product.id],
                 (err) => {
                   if (err) reject(err);
                   else resolve();
@@ -443,15 +429,12 @@ function store(req, res) {
               res.status(201).json({
                 message: "Order created successfully",
                 result: {
-                  order_id: orderId,
                   order_number: orderNumber,
                   status: simulatedStatus,
                   subtotal_amount: subtotal,
                   discount_amount: discountAmount,
                   shipping_amount: shippingAmount,
                   total_amount: totalAmount,
-                  customer_email_sent: 0,
-                  vendor_email_sent: 0,
                 },
               });
             })
