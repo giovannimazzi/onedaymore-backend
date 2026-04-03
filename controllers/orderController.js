@@ -3,6 +3,7 @@ const {
   handleFailedQuery,
   handleResourceNotFound,
 } = require("../utils/database");
+const { roundCurrency } = require("../utils/financial");
 
 function index(req, res) {
   const ordersSQL = `
@@ -282,6 +283,9 @@ function store(req, res) {
     function createOrder(discountCodeId, discountAmount) {
       const freeShippingThreshold = Number(process.env.FREE_SHIPPING_THRESHOLD);
       const standardShippingCost = Number(process.env.STANDARD_SHIPPING_COST);
+      const successPercentage = Number(
+        process.env.SUCCESS_PERCENTAGE_PAYMENT_SIMULATION,
+      );
 
       const shippingAmount =
         subtotal >= freeShippingThreshold ? 0 : standardShippingCost;
@@ -289,7 +293,7 @@ function store(req, res) {
       const totalAmount = subtotal - discountAmount + shippingAmount;
 
       const simulatedStatus =
-        Math.random() < 0.8 ? "confirmed" : "payment_failed";
+        Math.random() < successPercentage ? "confirmed" : "payment_failed";
 
       const orderNumber = generateOrderNumber();
 
@@ -370,10 +374,10 @@ function store(req, res) {
             result: {
               order_number: orderNumber,
               status: simulatedStatus,
-              subtotal_amount: subtotal,
-              discount_amount: discountAmount,
-              shipping_amount: shippingAmount,
-              total_amount: totalAmount,
+              subtotal_amount: roundCurrency(subtotal),
+              discount_amount: roundCurrency(discountAmount),
+              shipping_amount: roundCurrency(shippingAmount),
+              total_amount: roundCurrency(totalAmount),
             },
           });
         }
@@ -431,10 +435,10 @@ function store(req, res) {
                 result: {
                   order_number: orderNumber,
                   status: simulatedStatus,
-                  subtotal_amount: subtotal,
-                  discount_amount: discountAmount,
-                  shipping_amount: shippingAmount,
-                  total_amount: totalAmount,
+                  subtotal_amount: roundCurrency(subtotal),
+                  discount_amount: roundCurrency(discountAmount),
+                  shipping_amount: roundCurrency(shippingAmount),
+                  total_amount: roundCurrency(totalAmount),
                 },
               });
             })
