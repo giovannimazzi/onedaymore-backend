@@ -4,6 +4,10 @@ const {
   handleResourceNotFound,
 } = require("../utils/database");
 const { roundCurrency } = require("../utils/financial");
+const {
+  sendCustomerOrderEmail,
+  sendVendorOrderEmail,
+} = require("../email/mailer");
 
 function index(req, res) {
   const ordersSQL = `
@@ -358,16 +362,6 @@ function store(req, res) {
 
         const orderId = orderResult.insertId;
 
-        // TODO: Email handling (future implementation)
-        // After order creation, especially for confirmed orders, the flow should:
-        // 1. Send confirmation email to the customer
-        // 2. Send notification email to the vendor
-        // 3. Update the related flags in orders table:
-        //    - customer_email_sent = 1 if customer email is sent successfully
-        //    - vendor_email_sent = 1 if vendor email is sent successfully
-        // For now email handling is intentionally not implemented,
-        // so both flags remain 0 as a reminder for future development.
-
         if (simulatedStatus === "payment_failed") {
           return res.status(201).json({
             message: "Order created but payment failed",
@@ -382,7 +376,7 @@ function store(req, res) {
           });
         }
 
-        // 8. Se il pagamento è confermato, creo le righe "scontrino"
+        // 7. Se il pagamento è confermato, creo le righe "scontrino"
         const orderItemsSQL = `
           INSERT INTO onedaymore.order_product (
             product_id,
@@ -407,7 +401,7 @@ function store(req, res) {
         connection.query(orderItemsSQL, [orderItemsValues], (err) => {
           if (err) return handleFailedQuery(err, res);
 
-          // 9. Aggiorno lo stock solo per ordini confermati
+          // 8. Aggiorno lo stock solo per ordini confermati
           const updatePromises = normalizedItems.map((item) => {
             return new Promise((resolve, reject) => {
               const product = productsMap.get(item.slug);
@@ -430,6 +424,113 @@ function store(req, res) {
 
           Promise.all(updatePromises)
             .then(() => {
+              const emailItems = normalizedItems.map((item) => {
+                const product = productsMap.get(item.slug);
+
+                return {
+                  product_name: product.name,
+                  unit_price: Number(product.price),
+                  quantity: item.quantity,
+                };
+              });
+
+              const billingAddress = {
+                line1: billing_address_line1,
+                line2: billing_address_line2,
+                city: billing_city,
+                postalCode: billing_postal_code,
+                province: billing_province,
+                country: billing_country,
+              };
+
+              const shippingAddress = {
+                line1: shipping_address_line1,
+                line2: shipping_address_line2,
+                city: shipping_city,
+                postalCode: shipping_postal_code,
+                province: shipping_province,
+                country: shipping_country,
+              };
+
+              const placedAt = new Date();
+              const emailDelayMs = parseInt(
+                process.env.EMAIL_DELAY_MS || 15000,
+              );
+
+              sendCustomerOrderEmail({
+                to: customer_email,
+                orderNumber,
+                placedAt,
+                customerFirstName: customer_first_name,
+                customerLastName: customer_last_name,
+                phone,
+                billingAddress,
+                shippingAddress,
+                items: emailItems,
+                subtotal,
+                discount: discountAmount,
+                shipping: shippingAmount,
+                total: totalAmount,
+              })
+                .then(() => {
+                  const updateCustomerEmailSQL = `
+                    UPDATE onedaymore.orders
+                    SET customer_email_sent = 1
+                    WHERE id = ?;`;
+
+                  connection.query(updateCustomerEmailSQL, [orderId], (err) => {
+                    if (err) {
+                      console.error(
+                        "Failed to update customer_email_sent:",
+                        err,
+                      );
+                    }
+                  });
+
+                  setTimeout(() => {
+                    sendVendorOrderEmail({
+                      orderNumber,
+                      placedAt,
+                      customerEmail: customer_email,
+                      customerFirstName: customer_first_name,
+                      customerLastName: customer_last_name,
+                      phone,
+                      billingAddress,
+                      shippingAddress,
+                      items: emailItems,
+                      subtotal,
+                      discount: discountAmount,
+                      shipping: shippingAmount,
+                      total: totalAmount,
+                    })
+                      .then(() => {
+                        const updateVendorEmailSQL = `
+                          UPDATE onedaymore.orders
+                          SET vendor_email_sent = 1
+                          WHERE id = ?;`;
+
+                        connection.query(
+                          updateVendorEmailSQL,
+                          [orderId],
+                          (err) => {
+                            if (err) {
+                              console.error(
+                                "Failed to update vendor_email_sent:",
+                                err,
+                              );
+                            }
+                          },
+                        );
+                      })
+                      .catch((err) => {
+                        console.error("Vendor email send failed:", err);
+                      });
+                  }, emailDelayMs);
+                })
+                .catch((err) => {
+                  console.error("Customer email send failed:", err);
+                });
+
               res.status(201).json({
                 message: "Order created successfully",
                 result: {
