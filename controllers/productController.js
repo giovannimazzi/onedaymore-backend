@@ -311,7 +311,7 @@ function availability(req, res) {
         quantity_available: product.quantity_available,
         found: true,
         is_available: product.quantity_available >= item.quantity,
-        low_availability: product.quantity_available < 10,
+        /* low_availability: product.quantity_available < 10, */
       };
     });
 
@@ -473,7 +473,7 @@ function mapPublicProduct(product) {
     preparation_type: product.preparation_type,
     water_needed_ml: product.water_needed_ml,
     quantity_available: product.quantity_available,
-    low_availability: product.quantity_available < 10,
+    /* low_availability: product.quantity_available < 10, */
     total_sold: Number(product.total_sold),
     is_latest: Boolean(product.is_latest),
     is_best_seller: Boolean(product.is_best_seller),
