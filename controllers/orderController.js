@@ -139,44 +139,122 @@ function store(req, res) {
     discount_code,
   } = req.body;
 
-  // 1. Validazione minima dei campi richiesti (da fare più approfondita?)
-  if (
-    !customer_email ||
-    !customer_first_name ||
-    !customer_last_name ||
-    !billing_address_line1 ||
-    !billing_city ||
-    !billing_postal_code ||
-    !billing_country ||
-    !shipping_address_line1 ||
-    !shipping_city ||
-    !shipping_postal_code ||
-    !shipping_country ||
-    !Array.isArray(items) ||
-    items.length === 0
-  ) {
+  // 1. Validazione dei campi richiesti
+  const validationErrors = [];
+
+  if (!isValidEmail(customer_email)) {
+    validationErrors.push(
+      "customer_email is required and must be a valid email address",
+    );
+  }
+
+  if (!isNonEmptyString(customer_first_name)) {
+    validationErrors.push(
+      "customer_first_name is required and must be a non-empty string",
+    );
+  }
+
+  if (!isNonEmptyString(customer_last_name)) {
+    validationErrors.push(
+      "customer_last_name is required and must be a non-empty string",
+    );
+  }
+
+  if (!isValidPhone(phone)) {
+    validationErrors.push("phone must be a valid phone number");
+  }
+
+  if (!isNonEmptyString(billing_address_line1)) {
+    validationErrors.push(
+      "billing_address_line1 is required and must be a non-empty string",
+    );
+  }
+
+  if (!isOptionalString(billing_address_line2)) {
+    validationErrors.push("billing_address_line2 must be a string or null");
+  }
+
+  if (!isNonEmptyString(billing_city)) {
+    validationErrors.push(
+      "billing_city is required and must be a non-empty string",
+    );
+  }
+
+  if (!isValidPostalCode(billing_postal_code)) {
+    validationErrors.push(
+      "billing_postal_code is required and must be a valid postal code",
+    );
+  }
+
+  if (!isOptionalString(billing_province)) {
+    validationErrors.push("billing_province must be a string or null");
+  }
+
+  if (!isNonEmptyString(billing_country)) {
+    validationErrors.push(
+      "billing_country is required and must be a non-empty string",
+    );
+  }
+
+  if (!isNonEmptyString(shipping_address_line1)) {
+    validationErrors.push(
+      "shipping_address_line1 is required and must be a non-empty string",
+    );
+  }
+
+  if (!isOptionalString(shipping_address_line2)) {
+    validationErrors.push("shipping_address_line2 must be a string or null");
+  }
+
+  if (!isNonEmptyString(shipping_city)) {
+    validationErrors.push(
+      "shipping_city is required and must be a non-empty string",
+    );
+  }
+
+  if (!isValidPostalCode(shipping_postal_code)) {
+    validationErrors.push(
+      "shipping_postal_code is required and must be a valid postal code",
+    );
+  }
+
+  if (!isOptionalString(shipping_province)) {
+    validationErrors.push("shipping_province must be a string or null");
+  }
+
+  if (!isNonEmptyString(shipping_country)) {
+    validationErrors.push(
+      "shipping_country is required and must be a non-empty string",
+    );
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    validationErrors.push("items is required and must be a non-empty array");
+  }
+
+  if (validationErrors.length > 0) {
     return res.status(400).json({
-      message: "Missing required fields",
+      message: `Validation failed: ${validationErrors.join(", ")}`,
     });
   }
 
   // 2. Normalizzazione e validazione base degli items
-  const normalizedItems = items
-    .map((item) => ({
-      slug: String(item.slug || "").trim(),
-      quantity: Number(item.quantity),
-    }))
-    .filter(
-      (item) =>
-        item.slug.length > 0 &&
-        Number.isInteger(item.quantity) &&
-        item.quantity > 0,
-    );
+  const normalizedItems = items.map((item) => ({
+    slug: typeof item.slug === "string" ? item.slug.trim() : "",
+    quantity: Number(item.quantity),
+  }));
 
-  if (normalizedItems.length !== items.length) {
+  const invalidItems = normalizedItems.filter(
+    (item) =>
+      item.slug.length === 0 ||
+      !Number.isInteger(item.quantity) ||
+      item.quantity <= 0,
+  );
+
+  if (invalidItems.length > 0) {
     return res.status(400).json({
       message:
-        "Each item must contain a valid slug and quantity greater than 0",
+        "Validation failed: each item must contain a valid slug and an integer quantity greater than 0",
     });
   }
 
@@ -578,4 +656,38 @@ function generateOrderNumber() {
     .padStart(4, "0");
 
   return `ODM-${timestamp}-${random}`;
+}
+
+function isNonEmptyString(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function isOptionalString(value) {
+  return value === null || value === undefined || typeof value === "string";
+}
+
+function isValidEmail(value) {
+  if (!isNonEmptyString(value)) return false;
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(value.trim());
+}
+
+function isValidPhone(value) {
+  if (value === null || value === undefined || value === "") return true;
+  if (typeof value !== "string") return false;
+
+  const normalized = value.trim();
+  const phoneRegex = /^[+]?[\d\s()-]{6,20}$/;
+
+  return phoneRegex.test(normalized);
+}
+
+function isValidPostalCode(value) {
+  if (!isNonEmptyString(value)) return false;
+
+  const normalized = value.trim();
+  const postalCodeRegex = /^[A-Za-z0-9\s-]{3,10}$/;
+
+  return postalCodeRegex.test(normalized);
 }
