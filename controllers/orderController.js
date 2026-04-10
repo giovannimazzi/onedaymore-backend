@@ -8,6 +8,7 @@ const {
   sendCustomerOrderEmail,
   sendVendorOrderEmail,
 } = require("../email/mailer");
+const { isDevMode, getPaymentMode } = require("../utils/devDemoState");
 
 function index(req, res) {
   const ordersSQL = `
@@ -365,17 +366,13 @@ function store(req, res) {
     function createOrder(discountCodeId, discountAmount) {
       const freeShippingThreshold = Number(process.env.FREE_SHIPPING_THRESHOLD);
       const standardShippingCost = Number(process.env.STANDARD_SHIPPING_COST);
-      const successPercentage = Number(
-        process.env.SUCCESS_PERCENTAGE_PAYMENT_SIMULATION,
-      );
 
       const shippingAmount =
         subtotal >= freeShippingThreshold ? 0 : standardShippingCost;
 
       const totalAmount = subtotal - discountAmount + shippingAmount;
 
-      const simulatedStatus =
-        Math.random() < successPercentage ? "confirmed" : "payment_failed";
+      const simulatedStatus = getSimulatedPaymentStatus();
 
       const orderNumber = generateOrderNumber();
 
@@ -690,4 +687,24 @@ function isValidPostalCode(value) {
   const postalCodeRegex = /^[A-Za-z0-9\s-]{3,10}$/;
 
   return postalCodeRegex.test(normalized);
+}
+
+function getSimulatedPaymentStatus() {
+  const successPercentage = Number(
+    process.env.SUCCESS_PERCENTAGE_PAYMENT_SIMULATION,
+  );
+
+  if (isDevMode()) {
+    const paymentMode = getPaymentMode();
+
+    if (paymentMode === "always_success") {
+      return "confirmed";
+    }
+
+    if (paymentMode === "always_fail") {
+      return "payment_failed";
+    }
+  }
+
+  return Math.random() < successPercentage ? "confirmed" : "payment_failed";
 }

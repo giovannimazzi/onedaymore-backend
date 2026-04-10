@@ -19,12 +19,14 @@ const discountCodeRouter = require("./routers/discountCodeRouter");
 /* const orderProductRouter = require("./routers/orderProductRouter"); */
 const orderRouter = require("./routers/orderRouter");
 const productRouter = require("./routers/productRouter");
+const devDemoRouter = require("./routers/devDemoRouter");
 app.use(globalRouter);
 app.use("/categories", categoryRouter);
 app.use("/discount-codes", discountCodeRouter);
 /* app.use("/order-product", orderProductRouter); */
 app.use("/orders", orderRouter);
 app.use("/products", productRouter);
+app.use("/dev-demo", devDemoRouter);
 
 // # ERROR MIDDLEWARES
 const errorMiddleware = require("./middlewares/errorHandlers");
