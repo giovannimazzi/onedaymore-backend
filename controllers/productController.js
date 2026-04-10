@@ -56,6 +56,8 @@ function index(req, res) {
     max_storage_life_months,
     min_water_needed_ml,
     max_water_needed_ml,
+    min_quantity_available,
+    max_quantity_available,
   } = req.query;
 
   const allowedSortFields = {
@@ -168,6 +170,16 @@ function index(req, res) {
     queryParams.push(Number(max_water_needed_ml));
   }
 
+  if (min_quantity_available !== undefined && min_quantity_available !== "") {
+    extraWhere += ` AND COALESCE(products.quantity_available, 0) >= ?`;
+    queryParams.push(Number(min_quantity_available));
+  }
+
+  if (max_quantity_available !== undefined && max_quantity_available !== "") {
+    extraWhere += ` AND COALESCE(products.quantity_available, 0) <= ?`;
+    queryParams.push(Number(max_quantity_available));
+  }
+
   let limitClause = "";
   if (limit !== undefined) {
     const parsedLimit = parseInt(limit, 10);
@@ -206,6 +218,8 @@ function index(req, res) {
         max_storage_life_months: max_storage_life_months || null,
         min_water_needed_ml: min_water_needed_ml || null,
         max_water_needed_ml: max_water_needed_ml || null,
+        min_quantity_available: min_quantity_available || null,
+        max_quantity_available: max_quantity_available || null,
       },
     });
   });
